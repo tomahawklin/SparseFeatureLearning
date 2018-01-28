@@ -1,28 +1,38 @@
-import numpy as np
-import random
+from utils import load_data, set_cuda, detach_cuda
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.metrics import accuracy_score, roc_auc_score, classification_report, precision_recall_fscore_support
+from sklearn.ensemble import RandomForestClassifier
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
-import torch.nn.functional as F
 import torch.optim as optim
-from sklearn.metrics import roc_auc_score, precision_recall_fscore_support
-from torch.nn.utils import clip_grad_norm
-from utils import load_data, batch_iter, set_cuda, detach_cuda
+import torch.nn.functional as F
 
-class DeepNet(nn.Module):
-	def __init__(self, input_dim, hidden_dim, num_class = 2):
-		super(DeepNet, self).__init__()
+X_train, y_train, X_test, y_test, num_class, input_dim = load_data('e_data.npz')
+
+GBC = GradientBoostingClassifier(n_estimators = 200)
+GBC.fit(X_train, y_train)
+y_pred = GBC.predict(X_test)
+print('accuracy: ',accuracy_score(y_test,y_pred))
+target_names = ['Non-Early-Paid','Defaulted','Early-Paid']
+print(classification_report(y_test,y_pred,target_names=target_names,digits=4))
+
+rf_en = RandomForestClassifier(max_depth=10, criterion = 'entropy')
+rf_en.fit(X_train,y_train)
+y_pred = rf_en.predict(X_test)
+print('accuracy: ',accuracy_score(y_test,y_pred))
+print(classification_report(y_test,y_pred,target_names=target_names,digits=4))
+
+class EnsembleNet(nn.Module):
+	def __init__(self, input_dim, hidden_dim, num_class = 3):
+		super(EnsembleNet, self).__init__()
 		self.linear1 = nn.Linear(input_dim, hidden_dim)
-		self.linear2 = nn.Linear(hidden_dim, int(hidden_dim / 2))
-		self.linear3 = nn.Linear(int(hidden_dim / 2), num_class)
+		self.linear2 = nn.Linear(hidden_dim, num_class)
 		self.log_prob = nn.LogSoftmax()
 	
 	def forward(self, x):
 		hid = self.linear1(x)
 		hid = F.relu(hid)
 		hid = self.linear2(hid)
-		hid = F.relu(hid)
-		hid = self.linear3(hid)
 		log_prob = self.log_prob(hid)
 		return log_prob
 
@@ -42,6 +52,7 @@ def get_stats(pred_y, batch_y):
 		auc = float('nan')
 		recall = precision_recall_fscore_support(batch_y, pred_y)[1]
 	return acc, auc, recall
+
 
 def train(model, loss_func, train_batches, test_batches, opt, num_epochs):
 	epoch = 0
@@ -86,20 +97,15 @@ def train(model, loss_func, train_batches, test_batches, opt, num_epochs):
 				print(recall)
 			if acc > best_acc:
 				best_auc = auc
-				#best_spec = spec
-				#best_sens = sens
 				best_acc = acc
-				torch.save(model.state_dict(), 'e_model.pt')
-	return best_auc, best_acc#, best_sens, best_spec
-
-# Load data
-X_train, y_train, X_test, y_test, num_class, input_dim = load_data('e_data.npz')
+				torch.save(model.state_dict(), 'em_model.pt')
+	return best_auc, best_acc
 
 num_samples = X_train.shape[0]
 batch_size = 1000
 num_batch = int(num_samples / batch_size)
-hidden_dim = 30
-num_epochs = 100
+hidden_dim = 4
+num_epochs = 50
 learning_rate = 1e-2
 weight_decay = 5e-5
 rpt_step = 10000
@@ -109,10 +115,10 @@ ratio_1 = sum([1 for t in y_test if t == 1]) / y_train.shape[0]
 weight = set_cuda(torch.FloatTensor([1 / ratio_0, 1 / ratio_1, 1 / (1 - ratio_0 - ratio_1)]))
 num_class = 3
 
-train_batches = batch_iter(X_train, y_train, batch_size, shuffle = True)
-test_batches = batch_iter(X_test, y_test, X_test.shape[0], shuffle = False)
+train_batches = batch_iter(X_train, y_train, batch_size, c1 = GBC, c2 = rf_en, shuffle = True)
+test_batches = batch_iter(X_test, y_test, X_test.shape[0], c1 = GBC, c2 = rf_en, shuffle = False)
 
-model = DeepNet(input_dim, hidden_dim, num_class)
+model = EnsembleNet(2, hidden_dim, num_class)
 model = set_cuda(model)
 opt = optim.Adagrad(model.parameters(), lr = learning_rate, weight_decay = weight_decay)
 criterion = nn.CrossEntropyLoss()#weight = weight)
@@ -120,8 +126,3 @@ criterion = nn.CrossEntropyLoss()#weight = weight)
 best_auc, best_acc = train(model, criterion, train_batches, test_batches, opt, num_epochs)
 
 print('Best auc:%.3f, acc:%.3f' % (best_auc, best_acc))
-
-#model.load_state_dict(torch.load('model.pt'))
-
-
-
