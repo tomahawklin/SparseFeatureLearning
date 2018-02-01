@@ -8,23 +8,22 @@ import time
 
 data_dir = '../data/'
 
-df1 = pd.read_excel(data_dir + '2014.xlsx',sheetname='Sheet1')
-df2 = pd.read_excel(data_dir + '2015.xlsx',sheetname='Sheet1')
-df3 = pd.read_excel(data_dir + '2016_Q1.xlsx',sheetname='Sheet1')
-df4 = pd.read_excel(data_dir + '2016_Q2.xlsx',sheetname='Sheet1')
-df5 = pd.read_excel(data_dir + '2016_Q3.xlsx',sheetname='Sheet1')
-df6 = pd.read_excel(data_dir + '2016_Q4.xlsx',sheetname='Sheet1')
-df7 = pd.read_excel(data_dir + '2017_Q1.xlsx',sheetname='Sheet1')
-df8 = pd.read_excel(data_dir + '2017_Q2.xlsx',sheetname='Sheet1')
-df9 = pd.read_excel(data_dir + '2017_Q3.xlsx',sheetname='Sheet1')
+# Only look at expired data to avoid bias towards unexpired data
+
+df1 = pd.read_excel(data_dir + '2007_2011.xlsx',sheetname='Sheet1')
+df2 = pd.read_excel(data_dir + '2012_2013.xlsx',sheetname='Sheet1')
+df3 = pd.read_excel(data_dir + '2014.xlsx',sheetname='Sheet1')
+
 
 date_before_36 = datetime.date(2014,10,1)
 date_before_60 = datetime.date(2012,10,1)
-df1 = df1[((df1.term.str.contains('36')) & (df1.issue_d > date_before_36))
-                | (df1.term.str.contains('60'))]
+date_since_2010 = datetime.date(2010,1,1)
+df1 = df1[df1.issue_d > date_since_2010]
+df2 = df2[((df2.term.str.contains('60')) & (df2.issue_d < date_before_60)) | (df2.term.str.contains('36'))]
+df3 = df3[(df3.term.str.contains('36')) & (df3.issue_d < date_before_36)]
 
-data_train = pd.concat([df1,df2,df3,df4,df5],join='inner')
-data_test = pd.concat([df6,df7,df8],join='inner')
+data = pd.concat([df1,df2,df3],join='inner')
+data.to_csv('filter_data.csv',index=False)
 
 data_train = data_train[['id','loan_amnt','funded_amnt','funded_amnt_inv','term','int_rate',
          'installment','grade','sub_grade','emp_title','emp_length',
