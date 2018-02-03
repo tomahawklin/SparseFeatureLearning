@@ -6,14 +6,18 @@ from sklearn.metrics import accuracy_score, roc_auc_score, roc_curve, classifica
 from sklearn import preprocessing
 import time
 
+def display_cols(cols, df, col_dict):
+    for c in cols:
+        print("%30s, %10s, %10d, %100s" % (c, df[c].dtype, df[c].isnull().sum(), col_dict[c]))
+
+
 data_dir = '../data/'
 
-# Only look at expired data to avoid bias towards unexpired data
+df1 = pd.read_excel(data_dir + '2007_2011.xlsx', sheetname = 'Sheet1')
+df2 = pd.read_excel(data_dir + '2012_2013.xlsx', sheetname = 'Sheet1')
+df3 = pd.read_excel(data_dir + '2014.xlsx', sheetname = 'Sheet1')
 
-df1 = pd.read_excel(data_dir + '2007_2011.xlsx',sheetname='Sheet1')
-df2 = pd.read_excel(data_dir + '2012_2013.xlsx',sheetname='Sheet1')
-df3 = pd.read_excel(data_dir + '2014.xlsx',sheetname='Sheet1')
-
+# Only look at expired loans to avoid bias towards unexpired data
 date_before_36 = datetime.date(2014,10,1)
 date_before_60 = datetime.date(2012,10,1)
 date_since_2010 = datetime.date(2010,1,1)
@@ -21,7 +25,7 @@ df1 = df1[df1.issue_d > date_since_2010]
 df2 = df2[((df2.term.str.contains('60')) & (df2.issue_d < date_before_60)) | (df2.term.str.contains('36'))]
 df3 = df3[(df3.term.str.contains('36')) & (df3.issue_d < date_before_36)]
 
-data = pd.concat([df1,df2,df3],join='inner')
+data = pd.concat([df1,df2,df3], join = 'inner')
 
 dict_df = pd.read_excel(data_dir + 'LCDataDictionary.xlsx',sheetname='LoanStats')
 col_name = dict_df['LoanStatNew'].tolist()
@@ -32,14 +36,27 @@ col_dict = dict(zip(col_name, col_desc))
 ex_col = ['last_pymnt_amnt', 'last_pymnt_d', 'mths_since_last_delinq', 'next_pymnt_d', 'pymnt_plan', 
           'total_pymnt', 'total_pymnt_inv', 'total_rec_int', 'total_rec_late_fee', 'total_rec_prncp',
           'collection_recovery_fee', 'out_prncp', 'out_prncp_inv', 'recoveries']
+# Drop these columns because they contains more than 80% missing values
+ex_col += ['mths_since_last_record', 'mths_since_last_major_derog']
+# Drop these columns becuase the their values are messy
+ex_col += ['title', 'emp_title']
 
 data = data.drop(ex_col, axis = 1)
 
 df_col_name = data.columns.tolist()
 col_dict = {k: col_dict[k] for k in col_dict if k in df_col_name}
 
-for c in df_col_name:
-  print("%30s, %10s, %10d, %100s" % (c, data[c].dtype, data[c].isnull().sum(), col_dict[c]))
+numeric_cols = [c for c in df_col_name if data[c].dtype == 'float']
+display_cols(numeric_cols, data, col_dict)
+# Fill na with zero for columns that only contain numeric values
+data.revol_util = data.revol_util.fillna(0)
+
+other_cols = [c for c in df_col_name if c not in numeric_cols]
+for c in other_cols:
+    print(c, set([type(t) for t in data[c].tolist()]))
+# Fill na with MISSING token for non-numeric columns
+data.desc = data.desc.fillna('MISSING')
+data.last_credit_pull_d = data.last_credit_pull_d.fillna(pd.Timestamp('20180101'))
 
 data.to_csv('filter_data.csv',index=False)
 
