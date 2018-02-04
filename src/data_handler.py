@@ -5,6 +5,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, roc_auc_score, roc_curve, classification_report
 from sklearn import preprocessing
 import time
+from collections import Counter
+import random
 
 def display_cols(cols, df, col_dict):
     for c in cols:
@@ -38,93 +40,80 @@ ex_col = ['last_pymnt_amnt', 'last_pymnt_d', 'mths_since_last_delinq', 'next_pym
           'collection_recovery_fee', 'out_prncp', 'out_prncp_inv', 'recoveries']
 # Drop these columns because they contains more than 80% missing values
 ex_col += ['mths_since_last_record', 'mths_since_last_major_derog']
-# Drop these columns becuase the their values are messy
+# Drop these columns because the their values are messy
 ex_col += ['title', 'emp_title']
+# Drop these columns because they contains only one value or useless information 
+ex_col += ['application_type', 'last_credit_pull_d', 'desc']
 
 data = data.drop(ex_col, axis = 1)
+data = data.drop(data[data.loan_status.str.contains('meet') | data.loan_status.str.contains('Current') | data.loan_status.str.contains('Not Verified')].index)
 
-df_col_name = data.columns.tolist()
-col_dict = {k: col_dict[k] for k in col_dict if k in df_col_name}
+col_dict = {k: col_dict[k] for k in col_dict if k in data.columns}
 
-numeric_cols = [c for c in df_col_name if data[c].dtype == 'float']
+# Fill na with MISSING token for non-numeric columns
+#data.desc = data.desc.fillna('MISSING')
+#data.last_credit_pull_d = data.last_credit_pull_d.fillna(pd.Timestamp('20180101'))
+
+data.loc[data['home_ownership'] == 'ANY', 'home_ownership'] = "NONE"
+
+# Set up labels
+data['label'] = (data.loan_status.str.contains('Charged Off') | data.loan_status.str.contains('Default') | data.loan_status.str.contains('Late'))
+data.label = data.label.astype(float)
+
+data['issue_year'] = data['issue_d'].map(lambda x: str(x.year))
+data['issue_month'] = data['issue_d'].map(lambda x: str(x.month))
+data['early_year'] = data['earliest_cr_line'].map(lambda x: str(x.year))
+data['early_month'] = data['earliest_cr_line'].map(lambda x: str(x.month))
+data = data.drop(['issue_d', 'earliest_cr_line', 'loan_status'], axis = 1)
+
+numeric_cols = [c for c in data.columns if data[c].dtype == 'float']
 display_cols(numeric_cols, data, col_dict)
 # Fill na with zero for columns that only contain numeric values
 data.revol_util = data.revol_util.fillna(0)
 
-other_cols = [c for c in df_col_name if c not in numeric_cols]
+other_cols = [c for c in data.columns if c not in numeric_cols]
 for c in other_cols:
-    print(c, set([type(t) for t in data[c].tolist()]))
-# Fill na with MISSING token for non-numeric columns
-data.desc = data.desc.fillna('MISSING')
-data.last_credit_pull_d = data.last_credit_pull_d.fillna(pd.Timestamp('20180101'))
+    print(c, set([type(t) for t in data[c].tolist()]), len(Counter(data[c])))
 
-data.to_csv('filter_data.csv',index=False)
+# Tokenize non-numeric features
+# This dictionary map feature tokens to indices 
+min_count = 5
+feature_dict = {}
+other_cols.remove('id')
+for col in other_cols:
+    c = Counter(data[col])
+    l = sorted(c.items(), key = lambda x: x[1], reverse = True)
+    feature_dict[col] = {}
+    for item in l:
+        token = item[0] if item[1] >= min_count else 'UNK'
+        if token not in feature_dict[col]:
+            feature_dict[col][token] = len(feature_dict[col])
+        else:
+            continue
+    # Assign id 0 to UNK tokens
+    if 'UNK' in feature_dict[col]:
+        data.loc[~data[col].isin(feature_dict[col]), col] = feature_dict[col]['UNK']
+    data = data.replace({col: feature_dict[col]})
 
-data_train = data_train[['id','loan_amnt','funded_amnt','funded_amnt_inv','term','int_rate',
-         'installment','grade','sub_grade','emp_title','emp_length',
-         'home_ownership','annual_inc','verification_status','issue_d',
-         'loan_status','purpose','title','zip_code','addr_state','dti',
-        'delinq_2yrs','earliest_cr_line','open_acc','pub_rec','last_pymnt_d',
-        'last_pymnt_amnt','last_fico_range_high','last_fico_range_low','application_type',
-             'revol_bal','revol_util']]
+#data.to_csv('filter_data.csv',index=False)
 
-data_test = data_test[['id','loan_amnt','funded_amnt','funded_amnt_inv','term','int_rate',
-         'installment','grade','sub_grade','emp_title','emp_length',
-         'home_ownership','annual_inc','verification_status','issue_d',
-         'loan_status','purpose','title','zip_code','addr_state','dti',
-        'delinq_2yrs','earliest_cr_line','open_acc','pub_rec','last_pymnt_d',
-        'last_pymnt_amnt','last_fico_range_high','last_fico_range_low','application_type',
-             'revol_bal','revol_util']]
+data_dict = data.set_index('id').T.to_dict('dict')
+random.seed(2)
+indices = [k for k in data_dict]
+train_data = []; test_data = []
+for k in indices:
+    if random.random() > 0.8:
+        test_data.append(data_dict[k])
+    else:
+        train_data.append(data_dict[k])
 
-data_train.dropna(subset=['annual_inc','loan_status','issue_d','last_pymnt_d','loan_amnt',
-                          'int_rate','earliest_cr_line','open_acc','pub_rec','delinq_2yrs',
-                          'grade','last_fico_range_high','last_fico_range_low','installment',
-                         'funded_amnt','dti','funded_amnt_inv','revol_bal']
-            ,inplace=True)
+np.savez('data_final', train_data = train_data, test = test_data, feature_dict = feature_dict)
 
-data_test.dropna(subset=['annual_inc','loan_status','issue_d','last_pymnt_d','loan_amnt',
-                          'int_rate','earliest_cr_line','open_acc','pub_rec','delinq_2yrs',
-                          'grade','last_fico_range_high','last_fico_range_low','installment',
-                         'funded_amnt','dti','funded_amnt_inv','revol_bal']
-            ,inplace=True)
-
-
-# create labels for the dataset
-data_train['label'] = (data_train.loan_status.str.contains('Charged Off') | 
-                data_train.loan_status.str.contains('Default') | 
-                data_train.loan_status.str.contains('Late'))
-data_train['cr_hist'] = (data_train.issue_d - data_train.earliest_cr_line) / np.timedelta64(1, 'M')
-data_train.label = data_train.label.astype(int)
-
-data_test['label'] = (data_test.loan_status.str.contains('Charged Off') | 
-                data_test.loan_status.str.contains('Default') | 
-                data_test.loan_status.str.contains('Late'))
-data_test['cr_hist'] = (data_test.issue_d - data_test.earliest_cr_line) / np.timedelta64(1, 'M')
-data_test.label = data_test.label.astype(int)
-
-
-# clean and get training/testing data 
-temp = pd.get_dummies(data_train[['term','grade','emp_length','home_ownership',
-                                  'verification_status','purpose']],dummy_na=True)
-X_train = data_train.as_matrix(columns=['loan_amnt','funded_amnt_inv','int_rate','installment',
-                                       'annual_inc','dti','delinq_2yrs','open_acc','pub_rec',
-                                       'last_fico_range_high','last_fico_range_low','cr_hist'])
-X_train = np.concatenate((X_train,temp.as_matrix()),axis=1)
-y_train = data_train.label.as_matrix()
-
-temp = pd.get_dummies(data_test[['term','grade','emp_length','home_ownership',
-                                  'verification_status','purpose']],dummy_na=True)
-X_test = data_test.as_matrix(columns=['loan_amnt','funded_amnt_inv','int_rate','installment',
-                                       'annual_inc','dti','delinq_2yrs','open_acc','pub_rec',
-                                       'last_fico_range_high','last_fico_range_low','cr_hist'])
-X_test = np.concatenate((X_test,temp.as_matrix()),axis=1)
-y_test = data_test.label.as_matrix()
-
+'''
 min_max_scaler = preprocessing.MinMaxScaler()
 X_train_minmax = min_max_scaler.fit_transform(X_train)
 X_test_minmax = min_max_scaler.transform(X_test)
-
-np.savez('data', X_train=X_train_minmax,X_test=X_test_minmax,y_train=y_train,y_test=y_test)
+'''
 
 '''
                             id,     object,          0,                                                        A unique LC assigned ID for the loan listing.
