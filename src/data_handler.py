@@ -12,22 +12,38 @@ def display_cols(cols, df, col_dict):
     for c in cols:
         print("%30s, %10s, %10d, %100s" % (c, df[c].dtype, df[c].isnull().sum(), col_dict[c]))
 
+def clean_df(df):
+    df.drop(df[df.loan_status.str.contains('meet') | df.loan_status.str.contains('Current') | df.loan_status.str.contains('Issued')].index, inplace=True)
 
 data_dir = '../data/'
 
-df1 = pd.read_excel(data_dir + '2007_2011.xlsx', sheetname = 'Sheet1')
-df2 = pd.read_excel(data_dir + '2012_2013.xlsx', sheetname = 'Sheet1')
-df3 = pd.read_excel(data_dir + '2014.xlsx', sheetname = 'Sheet1')
+df1 = pd.read_excel(data_dir+'2007_2011.xlsx',sheetname='Sheet1')
+df2 = pd.read_excel(data_dir+'2012_2013.xlsx',sheetname='Sheet1')
+df3 = pd.read_excel(data_dir+'2014.xlsx',sheetname='Sheet1')
+df4 = pd.read_excel(data_dir+'2015.xlsx',sheetname='Sheet1')
+df5 = pd.read_excel(data_dir+'2016_Q1.xlsx',sheetname='Sheet1')
+df6 = pd.read_excel(data_dir+'2016_Q2.xlsx',sheetname='Sheet1')
+df7 = pd.read_excel(data_dir+'2016_Q3.xlsx',sheetname='Sheet1')
+df8 = pd.read_excel(data_dir+'2016_Q4.xlsx',sheetname='Sheet1')
+df9 = pd.read_excel(data_dir+'2017_Q1.xlsx',sheetname='Sheet1')
+df10 = pd.read_excel(data_dir+'2017_Q2.xlsx',sheetname='Sheet1')
+df11 = pd.read_excel(data_dir+'2017_Q3.xlsx',sheetname='Sheet1')
 
-# Only look at expired loans to avoid bias towards unexpired data
-date_before_36 = datetime.date(2014,10,1)
-date_before_60 = datetime.date(2012,10,1)
+# Only look at terminated loans (fully paid, defualt or late) and drop some datapoints that are too early
 date_since_2010 = datetime.date(2010,1,1)
 df1 = df1[df1.issue_d > date_since_2010]
-df2 = df2[((df2.term.str.contains('60')) & (df2.issue_d < date_before_60)) | (df2.term.str.contains('36'))]
-df3 = df3[(df3.term.str.contains('36')) & (df3.issue_d < date_before_36)]
 
-data = pd.concat([df1,df2,df3], join = 'inner')
+df_list = [df1, df2, df3, df4, df5, df6, df7, df8, df9, df10, df11]
+sum([sys.getsizeof(d) for d in df_list])
+sum([d.shape[0] for d in df_list])
+
+for df in df_list:
+    clean_df(df)
+
+sum([sys.getsizeof(d) for d in df_list])
+sum([d.shape[0] for d in df_list])
+
+data = pd.concat(df_list, join = 'inner')
 
 dict_df = pd.read_excel(data_dir + 'LCDataDictionary.xlsx',sheetname='LoanStats')
 col_name = dict_df['LoanStatNew'].tolist()
@@ -46,7 +62,6 @@ ex_col += ['title', 'emp_title']
 ex_col += ['application_type', 'last_credit_pull_d', 'desc']
 
 data = data.drop(ex_col, axis = 1)
-data = data.drop(data[data.loan_status.str.contains('meet') | data.loan_status.str.contains('Current') | data.loan_status.str.contains('Not Verified')].index)
 
 col_dict = {k: col_dict[k] for k in col_dict if k in data.columns}
 
@@ -54,11 +69,12 @@ col_dict = {k: col_dict[k] for k in col_dict if k in data.columns}
 #data.desc = data.desc.fillna('MISSING')
 #data.last_credit_pull_d = data.last_credit_pull_d.fillna(pd.Timestamp('20180101'))
 
-data.loc[data['home_ownership'] == 'ANY', 'home_ownership'] = "NONE"
+data.loc[data['home_ownership'] == 'ANY', 'home_ownership'] = "OTHER"
 
 # Set up labels
 data['label'] = (data.loan_status.str.contains('Charged Off') | data.loan_status.str.contains('Default') | data.loan_status.str.contains('Late'))
 data.label = data.label.astype(float)
+col_dict['label'] = '0 for paid and in grace period, 1 for default or late or charged off'
 
 data['issue_year'] = data['issue_d'].map(lambda x: str(x.year))
 data['issue_month'] = data['issue_d'].map(lambda x: str(x.month))
@@ -69,7 +85,8 @@ data = data.drop(['issue_d', 'earliest_cr_line', 'loan_status'], axis = 1)
 numeric_cols = [c for c in data.columns if data[c].dtype == 'float']
 display_cols(numeric_cols, data, col_dict)
 # Fill na with zero for columns that only contain numeric values
-data.revol_util = data.revol_util.fillna(0)
+for c in numeric_cols:
+    data[c] = data[c].fillna(0)
 
 other_cols = [c for c in data.columns if c not in numeric_cols]
 for c in other_cols:
@@ -107,7 +124,7 @@ for k in indices:
     else:
         train_data.append(data_dict[k])
 
-np.savez('data_final', train_data = train_data, test = test_data, feature_dict = feature_dict)
+np.savez('data_final', train = train_data, test = test_data, feature_dict = feature_dict)
 
 '''
 min_max_scaler = preprocessing.MinMaxScaler()
