@@ -10,22 +10,23 @@ from torch.nn.utils import clip_grad_norm
 from utils import load_data, batch_iter, set_cuda, detach_cuda
 
 class DeepNet(nn.Module):
-	def __init__(self, input_dim, hidden_dim, num_class = 2):
+	def __init__(self, input_float_dim, input_embed_dim, embed_size, hidden_dim, embed_keys, num_class = 2):
 		super(DeepNet, self).__init__()
-		self.linear1 = nn.Linear(input_dim, hidden_dim)
-		self.linear2 = nn.Linear(hidden_dim, int(hidden_dim / 2))
+		self.float = nn.Linear(input_float_dim, hidden_dim)
+		# Note: cuda will not move list structure to gpu. Explicitly define layers?
+		self.embed = [nn.Embedding(input_embed_dim[k], embed_size[k]) for k in embed_keys]
+		self.linear2 = nn.Linear(hidden_dim + sum([embed_size[k] for k in embed_keys]), int(hidden_dim / 2))
 		self.linear3 = nn.Linear(int(hidden_dim / 2), num_class)
 		self.log_prob = nn.LogSoftmax()
-	
-	def forward(self, x):
-		hid = self.linear1(x)
-		hid = F.relu(hid)
+	# TODO
+	def forward(self, X_float, X_embed):
+		float_hid = self.float(X_float)
+		float_hid = F.relu(float_hid)
 		hid = self.linear2(hid)
 		hid = F.relu(hid)
 		hid = self.linear3(hid)
 		log_prob = self.log_prob(hid)
 		return log_prob
-
 
 def get_stats(pred_y, batch_y):
 	# Todo: add recall, etc
@@ -93,7 +94,7 @@ def train(model, loss_func, train_batches, test_batches, opt, num_epochs):
 	return best_auc, best_acc#, best_sens, best_spec
 
 # Load data
-X_train, y_train, X_test, y_test, num_class, input_dim = load_data('e_data.npz')
+train, test, embed_dict, embed_dims, embed_keys, float_keys = load_data('data_final.npz')
 
 num_samples = X_train.shape[0]
 batch_size = 1000
@@ -109,8 +110,8 @@ ratio_1 = sum([1 for t in y_test if t == 1]) / y_train.shape[0]
 weight = set_cuda(torch.FloatTensor([1 / ratio_0, 1 / ratio_1, 1 / (1 - ratio_0 - ratio_1)]))
 num_class = 3
 
-train_batches = batch_iter(X_train, y_train, batch_size, shuffle = True)
-test_batches = batch_iter(X_test, y_test, X_test.shape[0], shuffle = False)
+train_iter = batch_iter(train, batch_size, embed_keys, float_keys, shuffle = False)
+test_iter = batch_iter(test, 1000, embed_keys, float_keys, shuffle = False)
 
 model = DeepNet(input_dim, hidden_dim, num_class)
 model = set_cuda(model)
