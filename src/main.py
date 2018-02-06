@@ -19,7 +19,7 @@ class DeepNet(nn.Module):
 		self.linear2 = nn.Linear(hidden_dim + sum([embed_sizes[k] for k in embed_keys]), hidden_dim)
 		self.linear3 = nn.Linear(hidden_dim, num_class)
 		self.log_prob = nn.LogSoftmax()
-	# TODO
+	
 	def forward(self, X_float, X_embed):
 		float_hid = self.linear1(X_float)
 		float_hid = F.relu(float_hid)
@@ -56,7 +56,7 @@ def train(model, loss_func, train_batches, test_batches, opt, num_epochs):
 	best_sens = 0
 	best_acc = 0
 	while epoch < num_epochs:
-		batch_X_float, batchX_embed, batch_y = next(train_batches)
+		batch_X_float, batch_X_embed, batch_y = next(train_batches)
 		opt.zero_grad()
 		log_prob = model(batch_X_float, batch_X_embed)
 		loss = loss_func(log_prob, batch_y)
@@ -97,7 +97,7 @@ def train(model, loss_func, train_batches, test_batches, opt, num_epochs):
 				best_sens = sens
 				best_acc = acc
 				torch.save(model.state_dict(), 'deep_model.pt')
-	return best_auc, best_acc#, best_sens, best_spec
+	return best_auc, best_acc, best_sens, best_spec
 
 # Load data
 train_data, test_data, embed_dict, embed_dims, embed_keys, float_keys = load_data('data_final.npz')
@@ -126,7 +126,7 @@ opt = optim.Adagrad(model.parameters(), lr = learning_rate, weight_decay = weigh
 # TODO: experiment with different weights and dorpout
 criterion = nn.CrossEntropyLoss()#weight = weight)
 
-best_auc, best_acc = train(model, criterion, train_batches, test_batches, opt, num_epochs)
+best_auc, best_acc, best_sens, best_spec = train(model, criterion, train_batches, test_batches, opt, num_epochs)
 
 print('Best auc:%.3f, acc:%.3f' % (best_auc, best_acc))
 
