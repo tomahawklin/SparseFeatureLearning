@@ -72,7 +72,7 @@ def train(model, loss_func, train_batches, test_batches, opt, num_epochs):
 			if num_class == 2:
 				score = log_prob[:, 1]
 				acc, auc, sens, spec = get_stats(pred_y, batch_y, score)
-				#print('Train: step: %d, avg loss: %.3f, acc: %.3f, auc: %.3f,  sens: %.3f, spec: %.3f' % ((step + epoch * num_batch), loss.data[0], acc, auc, sens, spec))
+				print('Train: step: %d, avg loss: %.3f, acc: %.3f, auc: %.3f,  sens: %.3f, spec: %.3f' % ((step + epoch * num_batch), loss.data[0], acc, auc, sens, spec))
 			else:
 				acc, auc, recall = get_stats(pred_y, batch_y)
 				print('Train: step: %d, avg loss: %.3f, acc: %.3f, auc: %.3f' % ((step + epoch * num_batch), loss.data[0], acc, auc))
@@ -85,7 +85,7 @@ def train(model, loss_func, train_batches, test_batches, opt, num_epochs):
 			if num_class == 2:
 				score = log_prob[:, 1]
 				acc, auc, sens, spec = get_stats(test_pred_y, test_y, score)
-				#print('Test: step: %d, acc: %.3f, auc: %.3f, sens: %.3f, spec: %.3f' % ((step + epoch * num_batch), acc, auc, sens, spec))
+				print('Test: step: %d, acc: %.3f, auc: %.3f, sens: %.3f, spec: %.3f' % ((step + epoch * num_batch), acc, auc, sens, spec))
 			else:
 				acc, auc, recall = get_stats(test_pred_y, test_batch_y)
 				print('Test: step: %d, acc: %.3f, auc: %.3f' % ((step + epoch * num_batch), acc, auc))
@@ -123,6 +123,7 @@ test_batches = batch_iter(test_data, 1000, embed_keys, float_keys, shuffle = Fal
 model = DeepNet(len(float_keys), embed_dims, embed_sizes, hidden_dim, embed_keys, num_class)
 model = set_cuda(model)
 opt = optim.Adagrad(model.parameters(), lr = learning_rate, weight_decay = weight_decay)
+# TODO: experiment with different weights and dorpout
 criterion = nn.CrossEntropyLoss()#weight = weight)
 
 best_auc, best_acc = train(model, criterion, train_batches, test_batches, opt, num_epochs)
