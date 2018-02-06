@@ -38,7 +38,7 @@ def batch_iter(data, batch_size, embed_keys, float_keys, shuffle = False):
 		batch_data = data[batch_idx]
 		batch_X_float, batch_X_embed, batch_y = [], [], [] 
 		for i in range(len(batch_data)):
-			X_float, X_embed, y = struct_data(train[0], embed_keys, float_keys)
+			X_float, X_embed, y = struct_data(batch_data[i], embed_keys, float_keys)
 			batch_y.append(y)
 			batch_X_float.append(X_float)
 			batch_X_embed.append(X_embed)
