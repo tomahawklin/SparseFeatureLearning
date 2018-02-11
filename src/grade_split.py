@@ -2,6 +2,12 @@ import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import accuracy_score, roc_auc_score, classification_report, precision_recall_fscore_support
 from sklearn.ensemble import RandomForestClassifier
+import datetime as dt
+import numpy as np
+from sklearn.model_selection import train_test_split
+import random
+
+random.seed(11)
 
 data = pd.read_csv('raw_data.csv')
 data_A = data[data['grade'] == 'A']
@@ -29,6 +35,8 @@ def df2data(data):
     data['label'] = (data.loan_status.str.contains('Charged Off') | 
                 data.loan_status.str.contains('Default') | 
                 data.loan_status.str.contains('Late'))
+    data.issue_d = data.issue_d.apply(lambda x: dt.datetime.strptime(x,'%Y-%m-%d'))
+    data.earliest_cr_line = data.earliest_cr_line.apply(lambda x: dt.datetime.strptime(x,'%Y-%m-%d'))
     data['cr_hist'] = (data.issue_d - data.earliest_cr_line) / np.timedelta64(1, 'M')
     data.label = data.label.astype(int)
     # clean and get training/testing data 
@@ -42,9 +50,9 @@ def df2data(data):
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=24)
     return X_train, X_test, y_train, y_test
 
-def fit_rf(X_train, X_test, y_train, y_test):
+def fit_rf(X_train, X_test, y_train, y_test, class_weight = "balanced"):
 	target_names = ['Paid', 'Defaulted']
-	rf_en = RandomForestClassifier(max_depth=10, criterion = 'entropy')
+	rf_en = RandomForestClassifier(max_depth=10, criterion = 'entropy', class_weight = class_weight)
 	rf_en.fit(X_train, y_train)
 	y_pred = rf_en.predict(X_test)
 	print('accuracy: ', accuracy_score(y_test, y_pred))
@@ -65,5 +73,6 @@ Grade E: 0.925
 Grade F: 0.915
 Grade G: 0.913
 Overall: 0.938
+Overall with balanced weights: 0.940
 Augment: 0.944
 '''
