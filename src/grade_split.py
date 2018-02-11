@@ -74,5 +74,15 @@ Grade F: 0.915
 Grade G: 0.913
 Overall: 0.938
 Overall with balanced weights: 0.940
-Augment: 0.944
 '''
+
+# Augment data
+data_file = np.load('data_final.npz')
+train, test = data_file['train'], data_file['test']
+y_train = [int(d['label']) for d in train]
+y_test = [int(d['label']) for d in test]
+X_train = np.array([[float(d[k]) for k in d if k != 'label' ] for d in train])
+X_test = np.array([[float(d[k]) for k in d if k != 'label' ] for d in test])
+fit_rf(X_train, X_test, y_train, y_test, class_weight = None)
+# Overall AUC: 0.9447
+# With balanced weights: 0.9437
