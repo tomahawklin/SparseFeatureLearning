@@ -8,6 +8,7 @@ import torch.optim as optim
 from sklearn.metrics import roc_auc_score, precision_recall_fscore_support
 from torch.nn.utils import clip_grad_norm
 from utils import load_data, batch_iter, set_cuda, detach_cuda
+import time
 
 class DeepNet(nn.Module):
 	def __init__(self, input_float_dim, embed_dims, embed_sizes, hidden_dim, embed_keys, num_class):
@@ -32,7 +33,6 @@ class DeepNet(nn.Module):
 		return log_prob
 
 def get_stats(pred_y, batch_y, score):
-	# Todo: add recall, etc
 	total = batch_y.size()[0]
 	correct = torch.sum(pred_y == batch_y.data)
 	acc = float(correct / total)
@@ -48,7 +48,7 @@ def get_stats(pred_y, batch_y, score):
 		recall = precision_recall_fscore_support(batch_y, pred_y)[1]
 	return acc, auc, recall
 
-def train(model, loss_func, train_batches, test_batches, opt, num_epochs):
+def train(model, loss_func, train_batches, test_batches, opt, num_epochs, rpt_step=1000, test_step=3000):
 	epoch = 0
 	step = 0
 	best_auc = 0
@@ -67,7 +67,7 @@ def train(model, loss_func, train_batches, test_batches, opt, num_epochs):
 		if step >= num_batch:
 			epoch += 1
 			step = 0
-		if step % rpt_step == 0:
+		if (step + epoch * num_batch) % rpt_step == 0:
 			_, pred_y = log_prob.data.max(dim = 1)
 			if num_class == 2:
 				score = log_prob[:, 1]
@@ -78,7 +78,7 @@ def train(model, loss_func, train_batches, test_batches, opt, num_epochs):
 				print('Train: step: %d, avg loss: %.3f, acc: %.3f, auc: %.3f' % ((step + epoch * num_batch), loss.data[0], acc, auc))
 				print('Recall:')
 				print(recall)
-		if step % test_step == 0:
+		if (step + epoch * num_batch) % test_step == 0:
 			test_X_float, test_X_embed, test_y = next(test_batches)
 			log_prob = model(test_X_float, test_X_embed)
 			_, test_pred_y = log_prob.data.max(dim = 1)
@@ -91,7 +91,7 @@ def train(model, loss_func, train_batches, test_batches, opt, num_epochs):
 				print('Test: step: %d, acc: %.3f, auc: %.3f' % ((step + epoch * num_batch), acc, auc))
 				print('Recall:')
 				print(recall)
-			if acc > best_acc:
+			if auc > best_auc:
 				best_auc = auc
 				best_spec = spec
 				best_sens = sens
@@ -111,11 +111,9 @@ num_samples = train_data.shape[0]
 batch_size = 1000
 num_batch = int(num_samples / batch_size)
 hidden_dim = 30
-num_epochs = 100
+num_epochs = 300
 learning_rate = 1e-2
 weight_decay = 5e-5
-rpt_step = 10000
-test_step = 50000
 ratio_1 = sum([1 for t in train_data if t['label'] == 1]) / train_data.shape[0]
 ratio_0 = 1 - ratio_1
 weight = set_cuda(torch.FloatTensor([1 / ratio_0, 1 / ratio_1]))
@@ -128,11 +126,12 @@ model = DeepNet(len(float_keys), embed_dims, embed_sizes, hidden_dim, embed_keys
 model = set_cuda(model)
 opt = optim.Adagrad(model.parameters(), lr = learning_rate, weight_decay = weight_decay)
 # TODO: experiment with different weights and dorpout
-criterion = nn.CrossEntropyLoss(weight = weight)
+criterion = nn.CrossEntropyLoss()#weight = weight)
 
+start = time.time()
 best_auc, best_acc, best_sens, best_spec = train(model, criterion, train_batches, test_batches, opt, num_epochs)
 
-print('Best auc:%.3f, acc:%.3f' % (best_auc, best_acc))
+print('Best auc:%.3f, acc:%.3f. Finished in %.3f seconds' % (best_auc, best_acc, time.time() - start))
 
 model.load_state_dict(torch.load('deep_model.pt'))
 test_X_float, test_X_embed, test_y = next(test_batches)
@@ -160,4 +159,14 @@ with 1 / ratio weights, 500 batch_size, 1e-2 lr:
 Best auc: 0.940, acc:0.890
 with 1 / ratio weights, 1000 batch_size, 5e-3 lr:
 Best auc: 0.939, acc:0.882
+Equal weights, 100 epochs, 1000 btach_size, 5e-3 lr:
+Best auc:0.927, acc:0.890
+Equal weights, 300 epochs, 1000 batch_size, 5e-3 lr:
+Best auc:0.937, acc:0.895
+Equal weights, 300 epochs, 1000 batch_size, 5e-3 lr, 60 hid_dim:
+Best auc:0.934, acc:0.891
+Equal weights, 300 epochs, 1000 batch_size, 1e-2 lr, 30 hid_dim
+Best auc:0.940, acc:0.896
+Equal weights, 300 epochs, 1000 batch_size, 1e-2 lr, customize embedding size:
+Best auc:0.938, acc:0.895
 '''
