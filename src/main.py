@@ -48,7 +48,7 @@ def get_stats(pred_y, batch_y, score):
 		recall = precision_recall_fscore_support(batch_y, pred_y)[1]
 	return acc, auc, recall
 
-def train(model, loss_func, train_batches, test_batches, opt, num_epochs, rpt_step=1000, test_step=3000):
+def train(model, loss_func, train_batches, test_batches, opt, num_epochs, rpt_step=10000, test_step=10000):
 	epoch = 0
 	step = 0
 	best_auc = 0
@@ -101,7 +101,7 @@ def train(model, loss_func, train_batches, test_batches, opt, num_epochs, rpt_st
 
 # Load data
 train_data, test_data, embed_dict, embed_dims, embed_keys, float_keys = load_data('data_final.npz')
-embed_sizes = {k: 4 for k in embed_keys}
+embed_sizes = {k: 3 for k in embed_keys}
 '''
 embed_sizes = {'issue_month': 4, 'home_ownership': 2, 'verification_status': 2, 'emp_length': 4, 
                'initial_list_status': 1, 'addr_state': 10, 'early_month': 4, 'grade': 3, 
@@ -119,19 +119,20 @@ ratio_0 = 1 - ratio_1
 weight = set_cuda(torch.FloatTensor([1 / ratio_0, 1 / ratio_1]))
 num_class = len(set([t['label'] for t in train_data]))
 
-train_batches = batch_iter(train_data, batch_size, embed_keys, float_keys, shuffle = False)
-test_batches = batch_iter(test_data, len(test_data), embed_keys, float_keys, shuffle = False)
-
-model = DeepNet(len(float_keys), embed_dims, embed_sizes, hidden_dim, embed_keys, num_class)
-model = set_cuda(model)
-opt = optim.Adagrad(model.parameters(), lr = learning_rate, weight_decay = weight_decay)
-# TODO: experiment with different weights and dorpout
-criterion = nn.CrossEntropyLoss()#weight = weight)
-
-start = time.time()
-best_auc, best_acc, best_sens, best_spec = train(model, criterion, train_batches, test_batches, opt, num_epochs)
-
-print('Best auc:%.3f, acc:%.3f. Finished in %.3f seconds' % (best_auc, best_acc, time.time() - start))
+for hidden_dim in [10, 20, 30, 40, 50, 60]:
+    train_batches = batch_iter(train_data, batch_size, embed_keys, float_keys, shuffle = False)
+    test_batches = batch_iter(test_data, len(test_data), embed_keys, float_keys, shuffle = False)
+    
+    model = DeepNet(len(float_keys), embed_dims, embed_sizes, hidden_dim, embed_keys, num_class)
+    model = set_cuda(model)
+    opt = optim.Adagrad(model.parameters(), lr = learning_rate, weight_decay = weight_decay)
+    # TODO: experiment with different weights and dorpout
+    criterion = nn.CrossEntropyLoss()#weight = weight)
+    
+    start = time.time()
+    best_auc, best_acc, best_sens, best_spec = train(model, criterion, train_batches, test_batches, opt, num_epochs)
+    
+    print('Best auc:%.3f, acc:%.3f. Finished in %.3f seconds' % (best_auc, best_acc, time.time() - start))
 
 model.load_state_dict(torch.load('deep_model.pt'))
 test_X_float, test_X_embed, test_y = next(test_batches)
@@ -169,4 +170,6 @@ Equal weights, 300 epochs, 1000 batch_size, 1e-2 lr, 30 hid_dim
 Best auc:0.940, acc:0.896
 Equal weights, 300 epochs, 1000 batch_size, 1e-2 lr, customize embedding size:
 Best auc:0.938, acc:0.895
+hidden dim 20:
+Best auc:0.943, acc:0.898 customize embedding size
 '''
