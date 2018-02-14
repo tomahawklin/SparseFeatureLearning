@@ -7,6 +7,7 @@ from sklearn import preprocessing
 import time
 from collections import Counter
 import random
+import sys
 
 def display_cols(cols, df, col_dict):
     for c in cols:
@@ -60,7 +61,8 @@ ex_col += ['mths_since_last_record', 'mths_since_last_major_derog']
 ex_col += ['title', 'emp_title']
 # Drop these columns because they contains only one value or useless information 
 ex_col += ['application_type', 'last_credit_pull_d', 'desc']
-
+# Use this column to calculate duration of loans
+ex_col.remove('last_pymnt_d')
 data = data.drop(ex_col, axis = 1)
 
 col_dict = {k: col_dict[k] for k in col_dict if k in data.columns}
@@ -75,12 +77,16 @@ data.loc[data['home_ownership'] == 'ANY', 'home_ownership'] = "OTHER"
 data['label'] = (data.loan_status.str.contains('Charged Off') | data.loan_status.str.contains('Default') | data.loan_status.str.contains('Late'))
 data.label = data.label.astype(float)
 col_dict['label'] = '0 for paid and in grace period, 1 for default or late or charged off'
+col_dict['duration'] = 'Number of months between last payment month and issue month'
 
 data['issue_year'] = data['issue_d'].map(lambda x: str(x.year))
 data['issue_month'] = data['issue_d'].map(lambda x: str(x.month))
 data['early_year'] = data['earliest_cr_line'].map(lambda x: str(x.year))
 data['early_month'] = data['earliest_cr_line'].map(lambda x: str(x.month))
-data = data.drop(['issue_d', 'earliest_cr_line', 'loan_status'], axis = 1)
+
+data.dropna(subset = ['last_pymnt_d'], inplace = True)
+data['duration'] = (data.last_pymnt_d.values.astype('datetime64[M]') - data.issue_d.values.astype('datetime64[M]')) / np.timedelta64(1, 'M')
+data = data.drop(['issue_d', 'earliest_cr_line', 'loan_status', 'last_pymnt_d'], axis = 1)
 
 numeric_cols = [c for c in data.columns if data[c].dtype == 'float']
 display_cols(numeric_cols, data, col_dict)

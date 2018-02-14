@@ -18,7 +18,9 @@ class DeepNet(nn.Module):
 		embed_layers = [nn.Embedding(embed_dims[k], embed_sizes[k]) for k in embed_keys]
 		self.embed = nn.ModuleList(embed_layers)
 		self.linear2 = nn.Linear(hidden_dim + sum([embed_sizes[k] for k in embed_keys]), hidden_dim)
-		self.linear3 = nn.Linear(hidden_dim, num_class)
+		sub_hidden_dim = int(hidden_dim / 2)
+		self.linear3 = nn.Linear(hidden_dim, sub_hidden_dim)
+		self.linear4 = nn.Linear(sub_hidden_dim, num_class)
 		self.log_prob = nn.LogSoftmax()
 	
 	def forward(self, X_float, X_embed):
@@ -29,6 +31,8 @@ class DeepNet(nn.Module):
 		hid = self.linear2(hid)
 		hid = F.relu(hid)
 		hid = self.linear3(hid)
+		hid = F.relu(hid)
+		hid = self.linear4(hid)
 		log_prob = self.log_prob(hid)
 		return log_prob
 
@@ -48,13 +52,16 @@ def get_stats(pred_y, batch_y, score):
 		recall = precision_recall_fscore_support(batch_y, pred_y)[1]
 	return acc, auc, recall
 
-def train(model, loss_func, train_batches, test_batches, opt, num_epochs, rpt_step=10000, test_step=10000):
+def train(model, loss_func, train_batches, test_batches, opt, num_epochs):
 	epoch = 0
 	step = 0
 	best_auc = 0
 	best_spec = 0
 	best_sens = 0
 	best_acc = 0
+	best_epoch = 0
+	rpt_step = int(num_batch / 5)
+	test_step = num_batch
 	while epoch < num_epochs:
 		batch_X_float, batch_X_embed, batch_y = next(train_batches)
 		opt.zero_grad()
@@ -92,12 +99,13 @@ def train(model, loss_func, train_batches, test_batches, opt, num_epochs, rpt_st
 				print('Recall:')
 				print(recall)
 			if auc > best_auc:
+				best_epoch = epoch
 				best_auc = auc
 				best_spec = spec
 				best_sens = sens
 				best_acc = acc
 				torch.save(model.state_dict(), 'deep_model.pt')
-	return best_auc, best_acc, best_sens, best_spec
+	return best_auc, best_acc, best_sens, best_spec, best_epoch
 
 # Load data
 train_data, test_data, embed_dict, embed_dims, embed_keys, float_keys = load_data('data_final.npz')
@@ -127,12 +135,13 @@ for hidden_dim in [10, 20, 30, 40, 50, 60]:
     model = set_cuda(model)
     opt = optim.Adagrad(model.parameters(), lr = learning_rate, weight_decay = weight_decay)
     # TODO: experiment with different weights and dorpout
-    criterion = nn.CrossEntropyLoss()#weight = weight)
+    class_loss = nn.CrossEntropyLoss()#weight = weight)
+    regrs_loss = nn.MSELoss()
     
     start = time.time()
-    best_auc, best_acc, best_sens, best_spec = train(model, criterion, train_batches, test_batches, opt, num_epochs)
+    best_auc, best_acc, best_sens, best_spec, best_epoch = train(model, criterion, train_batches, test_batches, opt, num_epochs)
     
-    print('Best auc:%.3f, acc:%.3f. Finished in %.3f seconds' % (best_auc, best_acc, time.time() - start))
+    print('Best auc:%.3f, acc:%.3f in epoch %d. Finished in %.3f seconds' % (best_auc, best_acc, best_epoch, time.time() - start))
 
 model.load_state_dict(torch.load('deep_model.pt'))
 test_X_float, test_X_embed, test_y = next(test_batches)
