@@ -2,6 +2,7 @@ import numpy as np
 import random
 import torch
 from torch.autograd import Variable
+from sklearn.metrics import roc_auc_score, precision_recall_fscore_support
 
 def load_data(path):
     data_file = np.load(path)
@@ -12,6 +13,7 @@ def load_data(path):
     embed_keys = list(embed_dict.keys())
     float_keys = [k for k in train[0] if k not in embed_keys]
     float_keys.remove('label')
+    float_keys.remove('duration')
     return train, test, embed_dict, embed_dims, embed_keys, float_keys
 
 def struct_data(data_dic, embed_keys, float_keys):
@@ -19,6 +21,13 @@ def struct_data(data_dic, embed_keys, float_keys):
 	X_float = [data_dic[k] for k in float_keys] 
 	X_embed = [int(data_dic[k]) for k in embed_keys]
 	return X_float, X_embed, y
+
+def struct_data_mul(data_dic, embed_keys, float_keys):
+	label = int(data_dic['label'])
+	duration = int(data_dic['duration'])
+	X_float = [data_dic[k] for k in float_keys] 
+	X_embed = [int(data_dic[k]) for k in embed_keys]
+	return X_float, X_embed, label, duration
 
 def batch_iter(data, batch_size, embed_keys, float_keys, shuffle = False):
 	start = -1 * batch_size
@@ -46,6 +55,35 @@ def batch_iter(data, batch_size, embed_keys, float_keys, shuffle = False):
 		batch_X_embed = Variable(torch.LongTensor(batch_X_embed))
 		batch_y = Variable(torch.LongTensor(batch_y))
 		yield set_cuda(batch_X_float), set_cuda(batch_X_embed), set_cuda(batch_y)
+
+def batch_iter_mul(data, batch_size, embed_keys, float_keys, shuffle = False):
+	start = -1 * batch_size
+	num_samples = len(data)
+	indices = list(range(num_samples))
+	if shuffle:
+		random.shuffle(indices)
+	while True:
+		start += batch_size
+		if start >= num_samples - batch_size:
+			if shuffle:
+				random.shuffle(indices)
+			batch_idx = indices[:batch_size]
+			start = batch_size
+		else:
+			batch_idx = indices[start: start + batch_size]
+		batch_data = data[batch_idx]
+		batch_X_float, batch_X_embed, batch_label, batch_duration = [], [], [], [] 
+		for i in range(len(batch_data)):
+			X_float, X_embed, label, duration = struct_data_mul(batch_data[i], embed_keys, float_keys)
+			batch_label.append(label)
+			batch_duration.append(duration)
+			batch_X_float.append(X_float)
+			batch_X_embed.append(X_embed)
+		batch_X_float = Variable(torch.FloatTensor(batch_X_float))
+		batch_X_embed = Variable(torch.LongTensor(batch_X_embed))
+		batch_label = Variable(torch.LongTensor(batch_label))
+		batch_duration = Variable(torch.FloatTensor(batch_duration))
+		yield set_cuda(batch_X_float), set_cuda(batch_X_embed), set_cuda(batch_label), set_cuda(batch_duration)
 
 def batch_iter_ensemble(X, y, batch_size, c1 = None, c2 = None, shuffle = False):
 	start = -1 * batch_size
@@ -86,3 +124,19 @@ def detach_cuda(var):
 		return var.cpu()
 	else:
 		return var
+
+def get_stats(pred_y, batch_y, score):
+	total = batch_y.size()[0]
+	correct = torch.sum(pred_y == batch_y.data)
+	acc = float(correct / total)
+	batch_y = detach_cuda(batch_y).data.numpy()
+	pred_y = detach_cuda(pred_y).numpy()
+	score = detach_cuda(score).data.numpy()
+	try:
+		auc = roc_auc_score(batch_y, score)
+		sens, spec = precision_recall_fscore_support(batch_y, pred_y)[1]
+		return acc, auc, sens, spec
+	except:
+		auc = float('nan')
+		recall = precision_recall_fscore_support(batch_y, pred_y)[1]
+	return acc, auc, recall

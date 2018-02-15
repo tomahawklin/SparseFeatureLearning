@@ -5,9 +5,8 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
 import torch.optim as optim
-from sklearn.metrics import roc_auc_score, precision_recall_fscore_support
 from torch.nn.utils import clip_grad_norm
-from utils import load_data, batch_iter, set_cuda, detach_cuda
+from utils import load_data, batch_iter, set_cuda, detach_cuda, get_stats
 import time
 
 class DeepNet(nn.Module):
@@ -35,22 +34,6 @@ class DeepNet(nn.Module):
 		hid = self.linear4(hid)
 		log_prob = self.log_prob(hid)
 		return log_prob
-
-def get_stats(pred_y, batch_y, score):
-	total = batch_y.size()[0]
-	correct = torch.sum(pred_y == batch_y.data)
-	acc = float(correct / total)
-	batch_y = detach_cuda(batch_y).data.numpy()
-	pred_y = detach_cuda(pred_y).numpy()
-	score = detach_cuda(score).data.numpy()
-	try:
-		auc = roc_auc_score(batch_y, score)
-		sens, spec = precision_recall_fscore_support(batch_y, pred_y)[1]
-		return acc, auc, sens, spec
-	except:
-		auc = float('nan')
-		recall = precision_recall_fscore_support(batch_y, pred_y)[1]
-	return acc, auc, recall
 
 def train(model, loss_func, train_batches, test_batches, opt, num_epochs):
 	epoch = 0
@@ -109,12 +92,10 @@ def train(model, loss_func, train_batches, test_batches, opt, num_epochs):
 
 # Load data
 train_data, test_data, embed_dict, embed_dims, embed_keys, float_keys = load_data('data_final.npz')
-embed_sizes = {k: 3 for k in embed_keys}
-'''
+
 embed_sizes = {'issue_month': 4, 'home_ownership': 2, 'verification_status': 2, 'emp_length': 4, 
                'initial_list_status': 1, 'addr_state': 10, 'early_month': 4, 'grade': 3, 
                'purpose': 5, 'sub_grade': 10, 'zip_code': 20, 'early_year': 6, 'term': 1, 'issue_year': 6}
-'''
 num_samples = train_data.shape[0]
 batch_size = 1000
 num_batch = int(num_samples / batch_size)
@@ -135,8 +116,7 @@ for hidden_dim in [10, 20, 30, 40, 50, 60]:
     model = set_cuda(model)
     opt = optim.Adagrad(model.parameters(), lr = learning_rate, weight_decay = weight_decay)
     # TODO: experiment with different weights and dorpout
-    class_loss = nn.CrossEntropyLoss()#weight = weight)
-    regrs_loss = nn.MSELoss()
+    criterion = nn.CrossEntropyLoss()#weight = weight)
     
     start = time.time()
     best_auc, best_acc, best_sens, best_spec, best_epoch = train(model, criterion, train_batches, test_batches, opt, num_epochs)
@@ -180,5 +160,5 @@ Best auc:0.940, acc:0.896
 Equal weights, 300 epochs, 1000 batch_size, 1e-2 lr, customize embedding size:
 Best auc:0.938, acc:0.895
 hidden dim 20:
-Best auc:0.943, acc:0.898 customize embedding size
+Best auc:0.945, acc:0.899 customize embedding size
 '''
