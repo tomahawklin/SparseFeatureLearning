@@ -63,8 +63,17 @@ ex_col += ['title', 'emp_title']
 ex_col += ['application_type', 'last_credit_pull_d', 'desc']
 # Use this column to calculate duration of loans
 ex_col.remove('last_pymnt_d')
+# Use this column to calculate total payment received
+# Note that column funded amnt and tota pymnt both have no null values.
+# We could also choose funded amnt inv instead of funded amnt, but 90% of values between these two have no difference.
+ex_col.remove('total_pymnt')
 data = data.drop(ex_col, axis = 1)
-
+'''
+total_pymnt < funded_amnt
+{'Charged Off': 144870, 'Late (31-120 days)': 23259, 'In Grace Period': 13419, 'Late (16-30 days)': 6145, 'Default': 207}
+total_pymnt >= funded_amnt
+{'Fully Paid': 597512, 'Charged Off': 7192, 'Late (31-120 days)': 1335, 'In Grace Period': 1267, 'Late (16-30 days)': 472, 'Default': 15}
+'''
 col_dict = {k: col_dict[k] for k in col_dict if k in data.columns}
 
 # Fill na with MISSING token for non-numeric columns
@@ -74,10 +83,11 @@ col_dict = {k: col_dict[k] for k in col_dict if k in data.columns}
 data.loc[data['home_ownership'] == 'ANY', 'home_ownership'] = "OTHER"
 
 # Set up labels
-data['label'] = (data.loan_status.str.contains('Charged Off') | data.loan_status.str.contains('Default') | data.loan_status.str.contains('Late'))
+data['label'] = (data.loan_status.str.contains('Charged Off') | data.loan_status.str.contains('Default') | data.loan_status.str.contains('Late') | data.loan_status.str.contains('Grace'))
 data.label = data.label.astype(float)
 col_dict['label'] = '0 for paid and in grace period, 1 for default or late or charged off'
 col_dict['duration'] = 'Number of months between last payment month and issue month'
+col_dict['pymnt_ratio'] = 'Ratio of payment received from total funded amount'
 
 data['issue_year'] = data['issue_d'].map(lambda x: str(x.year))
 data['issue_month'] = data['issue_d'].map(lambda x: str(x.month))
@@ -86,7 +96,24 @@ data['early_month'] = data['earliest_cr_line'].map(lambda x: str(x.month))
 
 data.dropna(subset = ['last_pymnt_d'], inplace = True)
 data['duration'] = (data.last_pymnt_d.values.astype('datetime64[M]') - data.issue_d.values.astype('datetime64[M]')) / np.timedelta64(1, 'M')
-data = data.drop(['issue_d', 'earliest_cr_line', 'loan_status', 'last_pymnt_d'], axis = 1)
+'''
+Duration distribution (mean):
+Late: 17.673
+Default: 19.009
+Fully: 19.863
+Charged off: 14.534
+In Grace Period: 18.060
+'''
+data['pymnt_ratio'] = data.total_pymnt / data.funded_amnt
+'''
+Ratio of total_pymnt out of funded_amnt break down:
+Fully Paid: 1.149
+Charged Off: 0.491
+In Grace Period: 0.537
+Default: 0.543
+Late: 0.517
+'''
+data = data.drop(['issue_d', 'earliest_cr_line', 'loan_status', 'last_pymnt_d', 'total_pymnt'], axis = 1)
 
 numeric_cols = [c for c in data.columns if data[c].dtype == 'float']
 display_cols(numeric_cols, data, col_dict)
@@ -130,7 +157,7 @@ for k in indices:
     else:
         train_data.append(data_dict[k])
 
-np.savez('data_final', train = train_data, test = test_data, feature_dict = feature_dict)
+np.savez('final_data', train = train_data, test = test_data, feature_dict = feature_dict)
 
 '''
 min_max_scaler = preprocessing.MinMaxScaler()

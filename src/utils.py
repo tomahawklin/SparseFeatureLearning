@@ -13,7 +13,10 @@ def load_data(path):
     embed_keys = list(embed_dict.keys())
     float_keys = [k for k in train[0] if k not in embed_keys]
     float_keys.remove('label')
-    float_keys.remove('duration')
+    if 'duration' in float_keys:
+        float_keys.remove('duration')
+    if 'pymnt_ratio' in float_keys:
+    	float_keys.remove('pymnt_ratio')
     return train, test, embed_dict, embed_dims, embed_keys, float_keys
 
 def struct_data(data_dic, embed_keys, float_keys):
@@ -25,9 +28,10 @@ def struct_data(data_dic, embed_keys, float_keys):
 def struct_data_mul(data_dic, embed_keys, float_keys):
 	label = int(data_dic['label'])
 	duration = int(data_dic['duration'])
+	ratio = data_dic['pymnt_ratio']
 	X_float = [data_dic[k] for k in float_keys] 
 	X_embed = [int(data_dic[k]) for k in embed_keys]
-	return X_float, X_embed, label, duration
+	return X_float, X_embed, label, duration, ratio
 
 def batch_iter(data, batch_size, embed_keys, float_keys, shuffle = False):
 	start = -1 * batch_size
@@ -72,18 +76,20 @@ def batch_iter_mul(data, batch_size, embed_keys, float_keys, shuffle = False):
 		else:
 			batch_idx = indices[start: start + batch_size]
 		batch_data = data[batch_idx]
-		batch_X_float, batch_X_embed, batch_label, batch_duration = [], [], [], [] 
+		batch_X_float, batch_X_embed, batch_label, batch_duration, batch_ratio = [], [], [], [], [] 
 		for i in range(len(batch_data)):
-			X_float, X_embed, label, duration = struct_data_mul(batch_data[i], embed_keys, float_keys)
+			X_float, X_embed, label, duration, ratio = struct_data_mul(batch_data[i], embed_keys, float_keys)
 			batch_label.append(label)
 			batch_duration.append(duration)
+			batch_ratio.append(ratio)
 			batch_X_float.append(X_float)
 			batch_X_embed.append(X_embed)
 		batch_X_float = Variable(torch.FloatTensor(batch_X_float))
 		batch_X_embed = Variable(torch.LongTensor(batch_X_embed))
+		batch_ratio = Variable(torch.FloatTensor(batch_ratio))
 		batch_label = Variable(torch.LongTensor(batch_label))
 		batch_duration = Variable(torch.FloatTensor(batch_duration))
-		yield set_cuda(batch_X_float), set_cuda(batch_X_embed), set_cuda(batch_label), set_cuda(batch_duration)
+		yield set_cuda(batch_X_float), set_cuda(batch_X_embed), set_cuda(batch_label), set_cuda(batch_duration), set_cuda(batch_duration)
 
 def batch_iter_ensemble(X, y, batch_size, c1 = None, c2 = None, shuffle = False):
 	start = -1 * batch_size
