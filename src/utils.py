@@ -27,7 +27,7 @@ def struct_data(data_dic, embed_keys, float_keys):
 
 def struct_data_mul(data_dic, embed_keys, float_keys):
 	label = int(data_dic['label'])
-	duration = int(data_dic['duration'])
+	duration = data_dic['duration']
 	ratio = data_dic['pymnt_ratio']
 	X_float = [data_dic[k] for k in float_keys] 
 	X_embed = [int(data_dic[k]) for k in embed_keys]
@@ -89,7 +89,7 @@ def batch_iter_mul(data, batch_size, embed_keys, float_keys, shuffle = False):
 		batch_ratio = Variable(torch.FloatTensor(batch_ratio))
 		batch_label = Variable(torch.LongTensor(batch_label))
 		batch_duration = Variable(torch.FloatTensor(batch_duration))
-		yield set_cuda(batch_X_float), set_cuda(batch_X_embed), set_cuda(batch_label), set_cuda(batch_duration), set_cuda(batch_duration)
+		yield set_cuda(batch_X_float), set_cuda(batch_X_embed), set_cuda(batch_label), set_cuda(batch_duration), set_cuda(batch_ratio)
 
 def batch_iter_ensemble(X, y, batch_size, c1 = None, c2 = None, shuffle = False):
 	start = -1 * batch_size
