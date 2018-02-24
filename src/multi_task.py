@@ -21,10 +21,10 @@ class MultiNet(nn.Module):
         self.linear3 = nn.Linear(hidden_dim, sub_hidden_dim)
         self.linear4_1 = nn.Linear(sub_hidden_dim, 1)
         self.log_prob = nn.LogSoftmax()
-        self.linear4_2 = nn.Linear(sub_hidden_dim + 1, num_class)
-        self.lmbda = lmbda
-        self.rgrs_loss = nn.MSELoss()
-        self.clas_loss = nn.CrossEntropyLoss()
+        self.linear4_2 = nn.Linear(1, num_class)
+        #self.lmbda = lmbda
+        #self.rgrs_loss = nn.L1Loss()
+        #self.clas_loss = nn.CrossEntropyLoss()
     
     def forward(self, X_float, X_embed, batch_label, batch_ratio):
         float_hid = self.linear1(X_float)
@@ -38,11 +38,11 @@ class MultiNet(nn.Module):
         ratio = self.linear4_1(hid)
         rgrs_loss = self.rgrs_loss(ratio, batch_ratio)
         diff = torch.mean(ratio) - torch.mean(batch_ratio)
-        clas_input = torch.cat([hid, ratio], dim = 1)
-        score = self.linear4_2(clas_input)
-        log_prob = self.log_prob(score)
-        clas_loss = self.clas_loss(log_prob, batch_label)
-        return clas_loss + self.lmbda * rgrs_loss, log_prob, diff.data[0]
+        #clas_input = ratio
+        #score = self.linear4_2(clas_input)
+        #log_prob = self.log_prob(score)
+        #clas_loss = self.clas_loss(log_prob, batch_label)
+        return diff #clas_loss + self.lmbda * rgrs_loss, log_prob, diff.data[0], ratio
 
 def train(model, train_batches, test_batches, opt, num_epochs, verbose = True):
     epoch = 0
@@ -58,7 +58,7 @@ def train(model, train_batches, test_batches, opt, num_epochs, verbose = True):
     while epoch < num_epochs:
         batch_X_float, batch_X_embed, batch_label, batch_duration, batch_ratio = next(train_batches)
         opt.zero_grad()
-        loss, log_prob, diff = model(batch_X_float, batch_X_embed, batch_label, batch_ratio)
+        loss, log_prob, diff, _ = model(batch_X_float, batch_X_embed, batch_label, batch_ratio)
         loss.backward()
         #clip_grad_norm(model.parameters(), 1)
         opt.step()
@@ -80,7 +80,7 @@ def train(model, train_batches, test_batches, opt, num_epochs, verbose = True):
                 print(recall)
         if (step + epoch * num_batch) % test_step == 0:
             test_X_float, test_X_embed, test_label, test_duration, test_ratio = next(test_batches)
-            _, log_prob, diff = model(test_X_float, test_X_embed, test_label, test_ratio)
+            _, log_prob, diff, _ = model(test_X_float, test_X_embed, test_label, test_ratio)
             _, test_pred_y = log_prob.data.max(dim = 1)
             if num_class == 2:
                 score = log_prob[:, 1]
@@ -111,7 +111,7 @@ num_samples = train_data.shape[0]
 batch_size = 1000
 num_batch = int(num_samples / batch_size)
 hidden_dim = 30
-num_epochs = 300
+num_epochs = 100
 learning_rate = 1e-2
 weight_decay = 5e-5
 ratio_1 = sum([1 for t in train_data if t['label'] == 1]) / train_data.shape[0]
@@ -131,14 +131,26 @@ for hidden_dim in [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]:
     best_auc, best_acc, best_sens, best_spec, best_epoch, best_diff = train(model, train_batches, test_batches, opt, num_epochs)
     
     print('Best auc:%.3f, acc:%.3f, diff: %.3f in epoch %d. Finished in %.3f seconds' % (best_auc, best_acc, best_diff, best_epoch, time.time() - start))
+    break
 
 model.load_state_dict(torch.load('multi_model.pt'))
 test_X_float, test_X_embed, test_label, test_duration, test_ratio = next(test_batches)
-_, log_prob, diff = model(test_X_float, test_X_embed, test_label, test_duration)
+_, log_prob, diff, ratio = model(test_X_float, test_X_embed, test_label, test_ratio)
 _, test_pred_y = log_prob.data.max(dim = 1)
 score = log_prob[:, 1]
 acc, auc, sens, spec = get_stats(test_pred_y, test_label, score)
 
+
+
+batch_size = 20541
+num_batch = len(data_size) / batch_size
+train_batches = batch_iter_mul(train_data, batch_size, embed_keys, float_keys, shuffle = False)
+train_pred, train_true = [], []
+for i in range(num_batch):
+    batch_X_float, batch_X_embed, batch_label, batch_duration, batch_ratio = next(train_batches)
+    _, _, diff, train_ratio = model(batch_X_float, batch_X_embed, batch_label, batch_ratio)
+    train_pred += train_ratio.data.cpu().numpy().reshape(-1).tolist()
+    train_true += batch_ratio.data.cpu().numpy().reshape(-1).tolist()
 
 
 '''
@@ -157,4 +169,7 @@ Best auc:0.716, acc:0.755, diff: -0.050 in epoch 300
 
 Dim20,  sequentail regression (ratio) + classification
 Best auc:0.729, acc:0.760, diff: -0.001 in epoch 190
+
+MAE loss instead of MSE loss: (100 epoch)
+Best auc:0.725, acc:0.756, diff: -0.057 in epoch 100
 '''

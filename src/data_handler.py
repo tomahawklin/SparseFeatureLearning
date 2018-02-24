@@ -1,8 +1,6 @@
 import numpy as np
 import pandas as pd
 import datetime
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, roc_auc_score, roc_curve, classification_report
 from sklearn import preprocessing
 import time
 from collections import Counter
