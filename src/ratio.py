@@ -41,7 +41,7 @@ def get_stats(ratio_pred, ratio_target):
     ratio_target = detach_cuda(ratio_target).data.numpy().reshape(-1)
     ratio_pred = detach_cuda(ratio_pred).data.numpy().reshape(-1)
     diff = np.abs(ratio_target - ratio_pred)
-    return np.mean(diff), np.median(diff), np.max(diff), np.min(diff)
+    return np.mean(diff), np.median(diff), np.max(diff)
 
 def train(model, train_batches, test_batches, opt, num_epochs, verbose = True):
     epoch = 0
@@ -63,20 +63,22 @@ def train(model, train_batches, test_batches, opt, num_epochs, verbose = True):
             step = 0
         if (step + epoch * num_batch) % rpt_step == 0:
             if verbose:
-                mean, median, mmax, mmin = get_stats(ratio, batch_ratio)
-                print('Train: step: %d, loss: %.3f, diff mean: %.3f, median: %.3f, max: %.3f, min: %.3f' % ((step + epoch * num_batch), loss.data[0], mean, median, mmax, mmin))
+                mean, median, mmax = get_stats(ratio, batch_ratio)
+                print('Train: step: %d, loss: %.3f, diff mean: %.3f, median: %.3f, max: %.3f' % ((step + epoch * num_batch), loss.data[0], mean, median, mmax))
         if (step + epoch * num_batch) % test_step == 0:
             test_X_float, test_X_embed, test_label, test_duration, test_ratio = next(test_batches)
             loss, ratio = model(test_X_float, test_X_embed, test_label, test_ratio)
             if verbose:
-                mean, median, mmax, mmin = get_stats(ratio, test_ratio)
-                print('Test: step: %d, loss: %.3f, diff mean: %.3f, median: %.3f, max: %.3f, min: %.3f' % ((step + epoch * num_batch), loss.data[0], mean, median, mmax, mmin))
+                mean, median, mmax = get_stats(ratio, test_ratio)
+                print('Test: step: %d, loss: %.3f, diff mean: %.3f, median: %.3f, max: %.3f' % ((step + epoch * num_batch), loss.data[0], mean, median, mmax))
             if median < best_diff_median:
+                best_diff_mean = mean
                 best_diff_median = median
+                best_diff_max = mmax
                 best_ratio = ratio
                 best_epoch = epoch
                 torch.save(model.state_dict(), 'ratio_model.pt')
-    return best_diff_median, best_ratio, best_epoch
+    return best_diff_mean, best_diff_median, best_diff_max, best_ratio, best_epoch
 
 # Load data
 train_data, test_data, embed_dict, embed_dims, embed_keys, float_keys = load_data('final_data.npz')
@@ -104,15 +106,15 @@ for hidden_dim in [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]:
     opt = optim.Adagrad(model.parameters(), lr = learning_rate, weight_decay = weight_decay)
     
     start = time.time()
-    best_diff, best_ratio, best_epoch = train(model, train_batches, test_batches, opt, num_epochs)
+    best_diff_mean, best_diff_median, best_diff_max, best_ratio, best_epoch = train(model, train_batches, test_batches, opt, num_epochs)
     
-    print('Best diff: %.3f in epoch %d. Finished in %.3f seconds' % (best_diff, best_epoch, time.time() - start))
+    print('Best diff mean: %.3f, median: %.3f, max: %.3f in epoch %d. Finished in %.3f seconds' % (best_diff_mean, best_diff_median, best_diff_max, best_epoch, time.time() - start))
 
 
 model.load_state_dict(torch.load('ratio_model.pt'))
 test_X_float, test_X_embed, test_label, test_duration, test_ratio = next(test_batches)
 loss, ratio = model(test_X_float, test_X_embed, test_label, test_ratio)
-mean, median, mmax, mmin = get_stats(ratio, test_ratio)
+mean, median, mmax = get_stats(ratio, test_ratio)
 
 
 
@@ -126,15 +128,18 @@ for i in range(num_batch):
     train_pred += train_ratio.data.cpu().numpy().reshape(-1).tolist()
     train_true += batch_ratio.data.cpu().numpy().reshape(-1).tolist()
 
-X_train = np.array(train_pred).reshape(-1, 1)
+X_train = np.array([d['pymnt_ratio'] for d in train_data]).reshape(-1, 1)
+#X_train = np.array(train_pred).reshape(-1, 1)
 y_train = np.array([d['label'] for d in train_data])
 X_test = ratio.data.cpu().numpy().reshape(-1, 1)
 y_test = np.array([d['label'] for d in test_data])
-rf_en = RandomForestClassifier(max_depth=10, criterion = 'entropy')
+rf_en = RandomForestClassifier(max_depth = 10, criterion = 'entropy')
 rf_en.fit(X_train, y_train)
 pos_prob = rf_en.predict_proba(X_test)[:, 1]
 print('AUC: ', roc_auc_score(y_test, pos_prob))
-
+#AUC:  0.616531154066
+#TODO: It is weird that X_test gives lower abs diff but poorer AUC
+#0.190357756058 0.0568775107673 1.31790662755
 
 '''
 First benchmark: classification with raw features
@@ -143,7 +148,7 @@ X_train = np.array([[d[k] for k in keys] for d in train_data])
 y_train = np.array([d['label'] for d in train_data])
 X_test = np.array([[d[k] for k in keys] for d in test_data])
 y_test = np.array([d['label'] for d in test_data])
-rf_en = RandomForestClassifier(max_depth=10, criterion = 'entropy')
+rf_en = RandomForestClassifier(max_depth = 10, criterion = 'entropy')
 rf_en.fit(X_train, y_train)
 pos_prob = rf_en.predict_proba(X_test)[:, 1]
 print('AUC: ', roc_auc_score(y_test, pos_prob))
@@ -154,11 +159,74 @@ X_train = np.array([d['pymnt_ratio'] for d in train_data]).reshape(-1, 1)
 y_train = np.array([d['label'] for d in train_data])
 X_test = np.array([d['pymnt_ratio'] for d in test_data]).reshape(-1, 1)
 y_test = np.array([d['label'] for d in test_data])
-rf_en = RandomForestClassifier(max_depth=10, criterion = 'entropy')
+rf_en = RandomForestClassifier(max_depth = 10, criterion = 'entropy')
 rf_en.fit(X_train, y_train)
 pos_prob = rf_en.predict_proba(X_test)[:, 1]
 print('AUC: ', roc_auc_score(y_test, pos_prob))
 AUC:  0.981542532219
+
+
+Thrid benchmark: Regression + classification
+X_train = np.array([[d[k] for k in keys] for d in train_data])
+y_train = np.array([d['pymnt_ratio'] for d in train_data])
+X_test = np.array([[d[k] for k in keys] for d in test_data])
+y_test = np.array([d['pymnt_ratio'] for d in test_data])
+reg = linear_model.LinearRegression()
+reg.fit(X_train, y_train)
+y_pred = reg.predict(X_test)
+diff = np.abs(y_test - y_pred)
+print(np.mean(diff), np.median(diff), np.max(diff))
+0.187989112202 0.130992154022 1.93954703802
+X_train = y_train.reshape(-1, 1)
+y_train = np.array([d['label'] for d in train_data])
+X_test = y_pred.reshape(-1, 1)
+y_test = np.array([d['label'] for d in test_data])
+rf_en = RandomForestClassifier(max_depth = 10, criterion = 'entropy')
+rf_en.fit(X_train, y_train)
+pos_prob = rf_en.predict_proba(X_test)[:, 1]
+print('AUC: ', roc_auc_score(y_test, pos_prob))
+AUC:  0.830877607679
+
+
+X_train = np.array([[d[k] for k in keys] for d in train_data])
+y_train = np.array([d['pymnt_ratio'] for d in train_data])
+X_test = np.array([[d[k] for k in keys] for d in test_data])
+y_test = np.array([d['pymnt_ratio'] for d in test_data])
+reg = linear_model.Lasso(alpha = 0.1)
+reg.fit(X_train, y_train)
+y_pred = reg.predict(X_test)
+diff = np.abs(y_test - y_pred)
+print(np.mean(diff), np.median(diff), np.max(diff))
+0.192008527117 0.131981700913 1.97689951665
+X_train = y_train.reshape(-1, 1)
+y_train = np.array([d['label'] for d in train_data])
+X_test = y_pred.reshape(-1, 1)
+y_test = np.array([d['label'] for d in test_data])
+rf_en = RandomForestClassifier(max_depth = 10, criterion = 'entropy')
+rf_en.fit(X_train, y_train)
+pos_prob = rf_en.predict_proba(X_test)[:, 1]
+print('AUC: ', roc_auc_score(y_test, pos_prob))
+AUC:  0.845227069672
+
+X_train = np.array([[d[k] for k in keys] for d in train_data])
+y_train = np.array([d['pymnt_ratio'] for d in train_data])
+X_test = np.array([[d[k] for k in keys] for d in test_data])
+y_test = np.array([d['pymnt_ratio'] for d in test_data])
+reg = linear_model.Ridge (alpha = .5)
+reg.fit(X_train, y_train)
+y_pred = reg.predict(X_test)
+diff = np.abs(y_test - y_pred)
+print(np.mean(diff), np.median(diff), np.max(diff))
+0.187989325244 0.131004403796 1.93952807925
+X_train = y_train.reshape(-1, 1)
+y_train = np.array([d['label'] for d in train_data])
+X_test = y_pred.reshape(-1, 1)
+y_test = np.array([d['label'] for d in test_data])
+rf_en = RandomForestClassifier(max_depth = 10, criterion = 'entropy')
+rf_en.fit(X_train, y_train)
+pos_prob = rf_en.predict_proba(X_test)[:, 1]
+print('AUC: ', roc_auc_score(y_test, pos_prob))
+AUC:  0.83112982664
 
 
 Notes of best median abs error (median and mean abs error decrease but max abs error increase over time)
